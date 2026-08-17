@@ -15,11 +15,12 @@ https://elben-fier.github.io
 - **账户资产**：多账户管理（现金 / 银行卡 / 电子钱包等），资产分布图
 - **设置与数据**：导出 / 导入 JSON 备份、清空数据、一键载入示例数据
 - **体验细节**：深色 / 浅色主题（自动记忆）、数字滚动动画、轻提示 Toast、自定义确认弹窗、URL hash 路由（可收藏/返回）、移动端抽屉式侧边栏
+- **网络韧性**：Chart.js 采用异步加载 + 多 CDN 备用源（jsdelivr / staticfile / bootcdn）与超时降级，某个 CDN 被墙或不可用时页面照常可用，图表区显示友好提示
 
 ## 技术栈
 
 - 原生 HTML + CSS + JavaScript（无框架）
-- [Chart.js](https://www.chart.js.org/)（CDN 引入）数据可视化
+- [Chart.js](https://www.chart.js.org/) 数据可视化（异步加载，多 CDN 备用）
 - localStorage 本地存储
 
 ## 目录结构

@@ -21,6 +21,7 @@ class El {
             },
             contains: c => this.classList._s.has(c)
         };
+        this._className = '';
         this.style = {};
         this.dataset = {};
         this.value = '';
@@ -31,6 +32,11 @@ class El {
         this.files = [];
         this.parentElement = null;
     }
+    set className(v) {
+        this._className = String(v);
+        this.classList._s = new Set(String(v).split(/\s+/).filter(Boolean));
+    }
+    get className() { return this._className; }
     addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); }
     dispatch(type, ev = {}) { (this.listeners[type] || []).forEach(fn => fn(ev)); }
     querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
@@ -45,7 +51,12 @@ class El {
         walk(this);
         return out;
     }
-    appendChild(c) { c.parentElement = this; this.children.push(c); return c; }
+    appendChild(c) {
+        c.parentElement = this;
+        this.children.push(c);
+        if (c.tagName === 'SCRIPT') setTimeout(() => c.dispatch('error'), 0); // 模拟 CDN 不可用
+        return c;
+    }
     remove() { if (this.parentElement) { const i = this.parentElement.children.indexOf(this); if (i >= 0) this.parentElement.children.splice(i, 1); } }
     getContext() { return {}; }
     focus() {}
@@ -93,6 +104,7 @@ const documentStub = {
     getElementById: id => byId[id] || null,
     createElement: tag => new El(tag, ''),
     body: root,
+    head: new El('head', ''),
     querySelectorAll: sel => allEls.filter(el => matchSel(el, sel)),
     addEventListener: () => {}
 };
@@ -198,9 +210,34 @@ async function main() {
     check('主题切换为深色', root.classList.contains('dark') === true);
     check('主题已持久化', store['finance_theme_v1'] === 'dark');
 
+    // ========== 场景：图表库 CDN 不可用（如 jsdelivr 被墙） ==========
+    console.log('\n—— 场景：图表库加载失败 ——');
+    Object.keys(store).forEach(k => delete store[k]); // 重置 localStorage
+    global.window.location.hash = '';                 // 回到默认页
+    global.window.Chart = undefined;                  // 模拟所有 CDN 加载失败
+    const noLibChecks = [];
+    const ncheck = (n, c) => noLibChecks.push([n, !!c]);
+    let noLibError = null;
+    try { eval(js); } catch (e) { noLibError = e; }
+    if (noLibError) {
+        console.error('❌ 无图表库时 app.js 出错:', noLibError.message);
+        process.exit(1);
+    }
+    await new Promise(r => setTimeout(r, 80)); // 等待 CDN 失败链 + 动画
+    const trendTip = byId['trendChart'].parentElement.querySelector('.chart-empty');
+    ncheck('无图表库时初始化无报错', !noLibError);
+    ncheck('无图表库时记录数仍渲染', byId['recordCount'].textContent.includes('共'));
+    ncheck('无图表库时统计数字仍渲染', byId['monthIncome'].textContent.startsWith('¥'));
+    ncheck('图表区域显示降级提示', trendTip !== null && trendTip.textContent.includes('图表'));
+    global.window.Chart = FakeChart; // 恢复
+
     let failed = 0;
     for (const [name, ok] of checks) {
         console.log((ok ? '✅' : '❌') + ' ' + name);
+        if (!ok) failed++;
+    }
+    for (const [name, ok] of noLibChecks) {
+        console.log((ok ? '✅' : '❌') + ' [CDN不可用] ' + name);
         if (!ok) failed++;
     }
     console.log(failed === 0 ? '\n冒烟测试全部通过 ✓' : `\n${failed} 项未通过 ✗`);

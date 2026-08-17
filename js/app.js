@@ -8,8 +8,53 @@
 const STORAGE_KEY = 'finance_data_v2';
 const THEME_KEY = 'finance_theme_v1';
 
-// Chart.js 由 CDN 注入全局（若加载失败则 window.Chart 为 undefined，渲染时会降级提示）
-const Chart = window.Chart;
+// Chart.js 异步加载（多 CDN 备用 + 超时控制，避免单个 CDN 不可用导致页面卡死）
+const CHART_CDNS = [
+    'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
+    'https://cdn.staticfile.org/Chart.js/4.4.1/chart.umd.min.js',
+    'https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.1/chart.umd.min.js'
+];
+const CHART_LOAD_TIMEOUT = 8000; // 每个 CDN 最多等待 8 秒
+let chartLibFailed = false;
+let chartLibLoading = false;
+
+function loadChartLib() {
+    return new Promise(resolve => {
+        if (window.Chart) { resolve(); return; }
+        if (chartLibLoading) { resolve(); return; }
+        chartLibLoading = true;
+        let idx = 0;
+        const tryNext = () => {
+            if (idx >= CHART_CDNS.length) {
+                chartLibFailed = true;
+                chartLibLoading = false;
+                resolve();
+                return;
+            }
+            const src = CHART_CDNS[idx++];
+            const s = document.createElement('script');
+            let settled = false;
+            const done = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                if (window.Chart) {
+                    chartLibFailed = false;
+                    chartLibLoading = false;
+                    resolve();
+                } else {
+                    tryNext();
+                }
+            };
+            const timer = setTimeout(done, CHART_LOAD_TIMEOUT);
+            s.src = src;
+            s.onload = done;
+            s.onerror = done;
+            document.head.appendChild(s);
+        };
+        tryNext();
+    });
+}
 
 const EXPENSE_CATEGORIES = ['餐饮', '交通', '购物', '住房', '娱乐', '医疗', '教育', '其他'];
 const INCOME_CATEGORIES = ['工资', '兼职', '理财收益', '红包', '其他'];
@@ -256,6 +301,13 @@ function chartNotEmpty(id) {
     if (tip) tip.remove();
 }
 
+// 图表库不可用时的提示文案
+function chartLibMsg() {
+    return chartLibFailed
+        ? '图表库加载失败（网络受限），记账等功能不受影响，可稍后刷新重试'
+        : '图表加载中…';
+}
+
 // ========== 数字滚动动画 ==========
 function animateValue(el, target, duration = 650) {
     const start = performance.now();
@@ -345,11 +397,11 @@ function renderTrendChart(monthStr) {
     chartNotEmpty('trendChart');
     const ctx = $('trendChart').getContext('2d');
     if (trendChartInst) trendChartInst.destroy();
-    if (!window.Chart) { chartEmpty('trendChart', '图表库加载失败，请检查网络后刷新'); return; }
+    if (!window.Chart) { chartEmpty('trendChart', chartLibMsg()); return; }
 
     const t = chartTheme();
-    Chart.defaults.color = t.tick;
-    trendChartInst = new Chart(ctx, {
+    window.Chart.defaults.color = t.tick;
+    trendChartInst = new window.Chart(ctx, {
         type: 'line',
         data: {
             labels: months,
@@ -412,13 +464,14 @@ function renderCategoryChart(monthStr) {
         chartEmpty('categoryChart', '该月暂无支出记录');
         return;
     }
+    if (!window.Chart) { chartEmpty('categoryChart', chartLibMsg()); return; }
     chartNotEmpty('categoryChart');
     const ctx = $('categoryChart').getContext('2d');
     if (categoryChartInst) categoryChartInst.destroy();
 
     const t = chartTheme();
-    Chart.defaults.color = t.tick;
-    categoryChartInst = new Chart(ctx, {
+    window.Chart.defaults.color = t.tick;
+    categoryChartInst = new window.Chart(ctx, {
         type: 'doughnut',
         data: {
             labels: labels,
@@ -784,13 +837,13 @@ function renderAnalysisTrend(range) {
     }
 
     if (analysisTrendChartInst) analysisTrendChartInst.destroy();
-    if (!window.Chart) { chartEmpty('analysisTrendChart', '图表库加载失败'); return; }
+    if (!window.Chart) { chartEmpty('analysisTrendChart', chartLibMsg()); return; }
     chartNotEmpty('analysisTrendChart');
 
     const t = chartTheme();
-    Chart.defaults.color = t.tick;
+    window.Chart.defaults.color = t.tick;
     const ctx = $('analysisTrendChart').getContext('2d');
-    analysisTrendChartInst = new Chart(ctx, {
+    analysisTrendChartInst = new window.Chart(ctx, {
         type: 'bar',
         data: {
             labels: labels,
@@ -828,13 +881,13 @@ function renderAnalysisPie(records) {
         chartEmpty('analysisPieChart', '该时段暂无支出数据');
         return;
     }
-    if (!window.Chart) return;
+    if (!window.Chart) { chartEmpty('analysisPieChart', chartLibMsg()); return; }
     chartNotEmpty('analysisPieChart');
 
     const t = chartTheme();
-    Chart.defaults.color = t.tick;
+    window.Chart.defaults.color = t.tick;
     const ctx = $('analysisPieChart').getContext('2d');
-    analysisPieChartInst = new Chart(ctx, {
+    analysisPieChartInst = new window.Chart(ctx, {
         type: 'pie',
         data: {
             labels: labels,
@@ -1069,16 +1122,16 @@ function renderAssetChart() {
         chartEmpty('assetChart', '暂无账户数据');
         return;
     }
-    if (!window.Chart) return;
+    if (!window.Chart) { chartEmpty('assetChart', chartLibMsg()); return; }
     chartNotEmpty('assetChart');
 
     const labels = appData.accounts.map(a => a.name);
     const data = appData.accounts.map(a => a.balance);
 
     const t = chartTheme();
-    Chart.defaults.color = t.tick;
+    window.Chart.defaults.color = t.tick;
     const ctx = $('assetChart').getContext('2d');
-    assetChartInst = new Chart(ctx, {
+    assetChartInst = new window.Chart(ctx, {
         type: 'doughnut',
         data: {
             labels: labels,
@@ -1258,6 +1311,15 @@ function init() {
     renderAsset();
     updateSidebarStats();
     updateStorageInfo();
+
+    // 异步加载图表库，加载完成后重绘当前页图表（不阻塞页面交互）
+    loadChartLib().then(() => {
+        if (window.Chart) {
+            renderCurrentPageCharts();
+        } else {
+            showToast('图表库加载失败，记账等功能不受影响', 'warning');
+        }
+    });
 
     showToast('欢迎回来 👋', 'info');
 }
